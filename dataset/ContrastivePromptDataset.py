@@ -1,16 +1,19 @@
 from datasets import load_dataset
 from config.names import ALPACA_PATH, MAL_PATH, ADV_PATH, TDC_PATH
 import random
+import warnings
 
 
 class ContrastivePromptDataset:
     def __init__(self, num_pairs, shuffle=False, seed=None):
         """
-
+        loads harmless and harmful prompts from various dataset.
         :param num_pairs: Number of pairs to return.
         :param shuffle: Whether to shuffle the pairs before slicing.
         :param seed: For reproducibility when shuffling.
         """
+        warnings.filterwarnings("ignore")
+
         self.num_pairs = num_pairs
         self.shuffle = shuffle
         self.seed = seed
