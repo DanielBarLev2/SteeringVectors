@@ -17,9 +17,10 @@ class ContrastiveBehaviorDataset:
     """
 
 
-    def __init__(self, path: str,
+    def __init__(self, name, path: str,
                  label_positive: str = 'answer_matching_behavior',
-                 label_negative: str = 'answer_not_matching_behavior'):
+                 label_negative: str = 'answer_not_matching_behavior',):
+        self.name = name
         self.examples: List[Dict[str, str]] = []
 
         if os.path.isdir(path):
@@ -76,6 +77,7 @@ class ContrastiveBehaviorDataset:
             full_path = os.path.join(base_dir, file)
             if os.path.exists(full_path):
                 datasets[name] = cls(
+                    name=name,
                     path=full_path,
                     label_positive='answer_matching_behavior',
                     label_negative='answer_not_matching_behavior'
