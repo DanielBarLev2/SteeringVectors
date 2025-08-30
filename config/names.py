@@ -22,7 +22,6 @@ ADVANCE_AI_RISK = PROJECT_ROOT + '/dataset' + "/advanced-ai-risk" + "/human_gene
 SURVIVAL_JS_PATH = ADVANCE_AI_RISK + '/survival-instinct.jsonl'
 
 
-LAYER_IDX = 13
-ALPHA = 1
+LAYER_IDX = 12
 BATCH_SIZE = 1
-MAX_NEW_TOKENS = 64
+MAX_NEW_TOKENS = 60
