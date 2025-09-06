@@ -12,4 +12,5 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir
 
 
 # configs
-MAX_NEW_TOKENS = 64
+MAX_NEW_TOKENS = 128
+NUM_INST_TRAIN = 32
