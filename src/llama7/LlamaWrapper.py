@@ -1,5 +1,5 @@
 from pathlib import Path
-
+from huggingface_hub import HfFolder
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from config.names import *
 
@@ -21,7 +21,7 @@ class LlamaWrapper:
         """
         self.model_path = LLAMA_2_7B
 
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, use_auth_token=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, token=HfFolder.get_token(), use_fast=True)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
             self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
@@ -78,21 +78,24 @@ class LlamaWrapper:
                                           do_sample=False,
                                           temperature=None,
                                           top_p=None,
-                                          max_new_tokens=max_new_tokens,
+                                          max_new_tokens=128,
                                           pad_token_id=self.tokenizer.eos_token_id)
 
         return self.tokenizer.decode(out_ids[0], skip_special_tokens=True)
 
     @staticmethod
     def load_sv(path: Path,
+                dtype=torch.float32,
                 map_location="cpu") -> torch.Tensor:
         """
         loads a steering vector from a path, normalize it and allocate contiguous space in memory.
         :param path: path to steering vector.
+        :param dtype: data type convertion for steering vector.
         :param map_location: cpu or cuda
         :return: tensor of size [4096]
         """
         r = torch.load(str(path), weights_only=True, map_location=map_location)
+        r = r.to(dtype)
         r /= r.norm()
 
         return r.contiguous()

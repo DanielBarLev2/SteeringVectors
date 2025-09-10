@@ -79,10 +79,14 @@ def main():
     r = llama7.load_sv(SV_PATH)
 
     PROMPT = "List three benefits that yoga has on physical health."
+    max_new_tokens = 20
+
     input_ids, attn_mask, prompt_len = llama7.to_tokens(PROMPT)
 
     # Baseline
-    response = llama7.generate_once(input_ids, attn_mask)
+    response = llama7.generate_once(input_ids=input_ids,
+                                    attn_mask=attn_mask,
+                                    max_new_tokens=max_new_tokens)
     print(" --- No steering:")
     print(response)
 
@@ -90,7 +94,9 @@ def main():
     alpha = 1.0
     hooks = register_residual_hooks(llama7.model, r, alpha, start_pos=prompt_len)
     try:
-        steered_response = llama7.generate_once(input_ids, attn_mask)
+        steered_response = llama7.generate_once(input_ids=input_ids,
+                                                attn_mask=attn_mask,
+                                                max_new_tokens=max_new_tokens)
     finally:
         for h in hooks:
             h.remove()
