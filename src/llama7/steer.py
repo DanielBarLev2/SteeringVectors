@@ -1,30 +1,5 @@
-from transformers import AutoTokenizer, AutoModelForCausalLM, set_seed
+from src.llama7.LlamaWrapper import LlamaWrapper
 from config.names import *
-from pathlib import Path
-
-
-def load_sv(path: Path) -> torch.Tensor:
-    """
-    loads a steering vector from a path, normalize it and allocate contiguous space in memory.
-    :param path: path to steering vector.
-    :return: tensor of size [4096]
-    """
-    r = torch.load(str(path), weights_only=True, map_location="cpu")
-    r /= r.norm()
-
-    return r.contiguous()
-
-
-def reformat_prompt(tokenizer, user_text: str) -> str:
-    """
-    Reformats a prompt. Adds chat template and assign role.
-    Format: "[INST] {prompt} [/INST] "
-    :param tokenizer: llama-2 tokenizer.
-    :param user_text: raw instruction from user.
-    :return: reformated prompt
-    """
-    massage = [{"role": "user", "content": user_text}]
-    return tokenizer.apply_chat_template(massage, tokenize=False, add_generation_prompt=True)
 
 
 def register_residual_hooks(model, r_vec: torch.Tensor, alpha: float, start_pos: int):
@@ -97,83 +72,25 @@ def register_residual_hooks(model, r_vec: torch.Tensor, alpha: float, start_pos:
     return hooks
 
 
-def to_tokens(tokenizer, user_text: str, device=DEVICE):
-    """
-    Reformats and tokenize a user prompt with the Llama-2 tokenizer.
-    :param tokenizer: llama-2 tokenizer.
-    :param user_text: raw instruction from user.
-    :param device: model device.
-    :return: 1. input_ids: Tokenized prompt IDs.
-             2. attn_mask: Attention mask aligned with input_ids.
-             3. prompt_len: Number of non-pad tokens.
-                * steering vectors affect only new tokens.
-    """
-    text = reformat_prompt(tokenizer, user_text)
-    inputs = tokenizer(text, return_tensors="pt")
-    input_ids = inputs["input_ids"].to(device)
-    attn_mask = inputs["attention_mask"].to(device)
-
-    prompt_len = int(attn_mask[0].sum().item())
-
-    return input_ids, attn_mask, prompt_len
-
-
-def generate_once(model, tokenizer, input_ids, attn_mask, max_new_tokens=MAX_NEW_TOKENS):
-    """
-    Generate one completion from Llama-2-7b-chat-hf using greedy decoding.
-    :param model: llama-2-7b-chat-hf
-    :param tokenizer: llama-2 tokenizer.
-    :param input_ids: Tokenized prompt IDs.
-    :param attn_mask: Attention mask aligned with input_ids.
-    :param max_new_tokens:  Maximum number of new tokens to generate.
-    :return: 1. decoded_text: The decoded response from Llama-2-7b-chat-hf.
-             2. prompt_len: The tokenized prompt length (start position of generation)
-
-    Notes: prompt_len is used downstream to apply steering only to generated tokens
-           (positions >= prompt_len) while leaving the prompt unmodified.
-    """
-    with torch.inference_mode():
-        out_ids = model.generate(input_ids=input_ids,
-                                 attention_mask=attn_mask,
-                                 do_sample=False,
-                                 temperature=None,
-                                 top_p=None,
-                                 max_new_tokens=max_new_tokens,
-                                 pad_token_id=tokenizer.eos_token_id)
-
-    return tokenizer.decode(out_ids[0], skip_special_tokens=True)
-
-
 def main():
-    set_seed(0)
-
-    # defines tokenizer and set pading
-    tokenizer = AutoTokenizer.from_pretrained(LLAMA_2_7B, use_fast=True)
-    if tokenizer.pad_token_id is None:
-        tokenizer.pad_token = tokenizer.eos_token
-        tokenizer.pad_token_id = tokenizer.eos_token_id
-
-    # loads model and set to evaluation
-    model = AutoModelForCausalLM.from_pretrained(LLAMA_2_7B, device_map="auto", torch_dtype=torch.bfloat16)
-    model.eval()
+    llama7 = LlamaWrapper(device_map="auto", torch_dtype=torch.float)
 
     # loads r (steering vector) and normalizes it
-    r = load_sv(SV_PATH)
-    r /= r.norm()
+    r = llama7.load_sv(SV_PATH)
 
     PROMPT = "List three benefits that yoga has on physical health."
-    input_ids, attn_mask, prompt_len = to_tokens(tokenizer, PROMPT, model.device)
+    input_ids, attn_mask, prompt_len = llama7.to_tokens(PROMPT)
 
     # Baseline
-    response = generate_once(model, tokenizer, input_ids, attn_mask)
+    response = llama7.generate_once(input_ids, attn_mask)
     print(" --- No steering:")
     print(response)
 
     # Steered response
     alpha = 1.0
-    hooks = register_residual_hooks(model, r, alpha, start_pos=prompt_len)
+    hooks = register_residual_hooks(llama7.model, r, alpha, start_pos=prompt_len)
     try:
-        steered_response = generate_once(model, tokenizer, input_ids, attn_mask)
+        steered_response = llama7.generate_once(input_ids, attn_mask)
     finally:
         for h in hooks:
             h.remove()

@@ -1,9 +1,6 @@
-from typing import Callable, List, Tuple, Optional, Iterable, Dict
-import contextlib
-import torch
+from pathlib import Path
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
-
 from config.names import *
 
 
@@ -16,119 +13,86 @@ class LlamaWrapper:
       - greedy, token-by-token generation that respects hooks
     """
 
-    def __init__(self):
+    def __init__(self,
+                 device_map="auto",
+                 torch_dtype=torch.float16):
         """
-        Initialize Llama-7b-chat-hf model with tokenizer. Sets to eval mode.
+        Initialize Llama-7b-chat-hf model with tokenizer.
         """
-        self.device = DEVICE
         self.model_path = LLAMA_2_7B
 
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, use_auth_token=True)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
             self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
 
-        self.tokenizer.padding_side = "left"
-
         self.model = AutoModelForCausalLM.from_pretrained(self.model_path,
-                                                          device_map="auto",
-                                                          torch_dtype=torch.float16)
-        self.model.eval()
+                                                          device_map=device_map,
+                                                          torch_dtype=torch_dtype).eval()
 
-    def build_prompt(self, instruction: str) -> str:
+        self.device = self.model.device
+
+    def reformat_prompt(self, user_text: str) -> str:
         """
-        Wrap the instruction with chat template tokens.
-        If tokenizer has "apply_chat_template" function, utilizing it. Else, wrap manually.
-        :param instruction: Raw prompts from user.
-        :return: Formated prompt.
+        Reformats a prompt. Adds chat template and assign role.
+        Format: "[INST] {prompt} [/INST] "
+        :param user_text: raw instruction from user.
+        :return: reformated prompt
         """
-        if hasattr(self.tokenizer, "apply_chat_template"):
-            messages = [{"role": "user", "content": instruction}]
-            return self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        massage = [{"role": "user", "content": user_text}]
+        return self.tokenizer.apply_chat_template(massage, tokenize=False, add_generation_prompt=True)
 
-        return f"<s>[INST] {instruction} [/INST]"
-
-    def tokenize_instructions(self, instructions: List[str]) -> torch.Tensor:
+    def to_tokens(self, user_text: str):
         """
-        Build Llama-2 chat prompts for a batch of user instructions and tokenize them.
-        :param instructions: Raw prompts from user.
-        :return: A tensor of shape (batch_size, seq_len_max) containing token IDs.
+        Reformats and tokenize a user prompt with the Llama-2 tokenizer.
+        :param user_text: raw instruction from user.
+        :return: 1. input_ids: Tokenized prompt IDs.
+                 2. attn_mask: Attention mask aligned with input_ids.
+                 3. prompt_len: Number of non-pad tokens.
+                    * steering vectors affect only new tokens.
         """
-        prompts = []
-        for instruction in instructions:
-            prompts.append(self.build_prompt(instruction))
+        text = self.reformat_prompt(user_text)
+        inputs = self.tokenizer(text, return_tensors="pt")
+        input_ids = inputs["input_ids"].to(self.device)
+        attn_mask = inputs["attention_mask"].to(self.device)
 
-        tokens = self.tokenizer(prompts, return_tensors="pt", padding=True, truncation=False).input_ids
-        tokens = tokens.to(self.device)
+        prompt_len = int(attn_mask[0].sum().item())
 
-        return tokens
+        return input_ids, attn_mask, prompt_len
 
-    @contextlib.contextmanager
-    def hooks(self, fwd_hooks: Iterable[Tuple[int, Callable]] = ()):
+    def generate_once(self, input_ids, attn_mask, max_new_tokens=MAX_NEW_TOKENS):
         """
-        Simple forward-hook manager (attach to transformer layers).
-        fwd_hooks: iterable of (layer_index, hook_fn)
-            where hook_fn has signature: hook_fn(module, inputs, output) -> output
-        We attach to self.model.model.layers[layer_index]
+        Generate one completion from Llama-2-7b-chat-hf using greedy decoding.
+        :param input_ids: Tokenized prompt IDs.
+        :param attn_mask: Attention mask aligned with input_ids.
+        :param max_new_tokens:  Maximum number of new tokens to generate.
+        :return: 1. decoded_text: The decoded response from Llama-2-7b-chat-hf.
+                 2. prompt_len: The tokenized prompt length (start position of generation)
+
+        Notes: prompt_len is used downstream to apply steering only to generated tokens
+               (positions >= prompt_len) while leaving the prompt unmodified.
         """
-        handles = []
-        try:
-            for layer_idx, hook_fn in fwd_hooks:
-                layer = self.model.model.layers[layer_idx]
-                h = layer.register_forward_hook(hook_fn)
-                handles.append(h)
-            yield
-        finally:
-            for h in handles:
-                h.remove()
+        with torch.inference_mode():
+            out_ids = self.model.generate(input_ids=input_ids,
+                                          attention_mask=attn_mask,
+                                          do_sample=False,
+                                          temperature=None,
+                                          top_p=None,
+                                          max_new_tokens=max_new_tokens,
+                                          pad_token_id=self.tokenizer.eos_token_id)
 
-    @torch.inference_mode()
-    def generate_with_hooks(self,
-                            tokens: torch.Tensor,
-                            fwd_hooks: Iterable[Tuple[int, Callable]] = (),
-                            ) -> List[str]:
+        return self.tokenizer.decode(out_ids[0], skip_special_tokens=True)
+
+    @staticmethod
+    def load_sv(path: Path,
+                map_location="cpu") -> torch.Tensor:
         """
-        Token-by-token greedy generation that supports hooks
-        tokens: Tensor [batch, seq_len], already on self.model.device
-        Returns: list[str] of decoded completions (ONLY the newly generated tokens).
+        loads a steering vector from a path, normalize it and allocate contiguous space in memory.
+        :param path: path to steering vector.
+        :param map_location: cpu or cuda
+        :return: tensor of size [4096]
         """
-        batch_size, seq_length = tokens.shape
-        total_len = seq_length + MAX_NEW_TOKENS
+        r = torch.load(str(path), weights_only=True, map_location=map_location)
+        r /= r.norm()
 
-        all_tokens = torch.full((batch_size, total_len),
-                                self.tokenizer.pad_token_id,
-                                dtype=torch.long,
-                                device=self.device)
-        all_tokens[:, :seq_length] = tokens
-
-        for i in range(MAX_NEW_TOKENS):
-            cur_len = seq_length + i
-            with self.hooks(fwd_hooks=fwd_hooks):
-                logits = self.model(input_ids=all_tokens[:, :cur_len]).logits
-            next_ids = logits[:, -1, :].argmax(dim=-1)  # greedy
-            all_tokens[:, cur_len] = next_ids
-
-        # decode ONLY the generated tail for each batch item
-        gens = self.tokenizer.batch_decode(all_tokens[:, seq_length:], skip_special_tokens=True)
-
-        return gens
-
-
-    def get_generations(self,
-                        instructions: List[str],
-                        fwd_hooks: Iterable[Tuple[int, Callable]] = (),
-                        batch_size: int = 4,
-                        ) -> List[str]:
-        """
-        Batched generation over instructions for convenience
-        :param instructions: list of raw prompts from user.
-        :param fwd_hooks:
-        :param batch_size:
-        :return:
-        """
-        out = []
-        for i in range(0, len(instructions), batch_size):
-            tokens = self.tokenize_instructions(instructions[i:i + batch_size])
-            out.extend(self.generate_with_hooks(tokens, fwd_hooks=fwd_hooks))
-        return out
-
+        return r.contiguous()
