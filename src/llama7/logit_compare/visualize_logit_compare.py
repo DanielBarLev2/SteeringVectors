@@ -1,11 +1,7 @@
-# visualize_logit_compare.py
-import json
 import html
 from pathlib import Path
 
-IN_JSON = "logit_compare.json"
 TEMPLATE_PATH = "steering_viz_template.html"
-OUT_HTML = "sleep.html"
 
 
 def safe(s: str) -> str:
@@ -54,22 +50,20 @@ def build_grid_html(response_tokens, per_step_top):
     return "\n".join(blocks)
 
 
-# build html
-data = json.loads(Path(IN_JSON).read_text(encoding="utf-8"))
+def build_html(data):
+    prompt = data["prompt"]
+    response_tokens = data["response_tokens"]
+    per_step_top = data["per_step_top"]
 
-prompt = data["prompt"]
-response_tokens = data["response_tokens"]
-per_step_top = data["per_step_top"]
+    template = Path(TEMPLATE_PATH).read_text(encoding="utf-8")
+    grid_html = build_grid_html(response_tokens, per_step_top)
 
-template = Path(TEMPLATE_PATH).read_text(encoding="utf-8")
-grid_html = build_grid_html(response_tokens, per_step_top)
+    html_out = template.format(
+        prompt=safe(prompt),
+        response=safe("".join(response_tokens)),
+        grid=grid_html,
+        topk=len(per_step_top[0]) if per_step_top else 5
+    )
 
-html_out = template.format(
-    prompt=safe(prompt),
-    response=safe("".join(response_tokens)),
-    grid=grid_html,
-    topk=len(per_step_top[0]) if per_step_top else 5
-)
-
-Path(OUT_HTML).write_text(html_out, encoding="utf-8")
-print(f"[INFO] Wrote visualization → {Path(OUT_HTML).resolve()}")
+    Path(f'results/{data["index"]}.html').write_text(html_out, encoding="utf-8")
+    print(f"[INFO] Wrote visualization → {Path(f'results/{data["index"]}.html').resolve()}")
