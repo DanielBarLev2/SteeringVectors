@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import torch
 import os
 
@@ -11,3 +13,6 @@ LLAMA_2_7B = "meta-llama/Llama-2-7b-chat-hf"
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 SV_DIR = PROJECT_ROOT + "/Steering-Vectors"
 SV_PATH = SV_DIR + "/refusal_vector.pt"
+
+
+
