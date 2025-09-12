@@ -60,7 +60,7 @@ class LlamaWrapper:
 
         return input_ids, attn_mask, prompt_len
 
-    def generate_once(self, input_ids, attn_mask, max_new_tokens=MAX_NEW_TOKENS):
+    def generate_once(self, input_ids, attn_mask, max_new_tokens=128):
         """
         Generate one completion from Llama-2-7b-chat-hf using greedy decoding.
         :param input_ids: Tokenized prompt IDs.
@@ -78,7 +78,7 @@ class LlamaWrapper:
                                           do_sample=False,
                                           temperature=None,
                                           top_p=None,
-                                          max_new_tokens=128,
+                                          max_new_tokens=max_new_tokens,
                                           pad_token_id=self.tokenizer.eos_token_id)
 
         return self.tokenizer.decode(out_ids[0], skip_special_tokens=True)
