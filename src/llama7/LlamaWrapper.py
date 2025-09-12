@@ -79,9 +79,22 @@ class LlamaWrapper:
                                           temperature=None,
                                           top_p=None,
                                           max_new_tokens=max_new_tokens,
-                                          pad_token_id=self.tokenizer.eos_token_id)
+                                          use_cache=True,
+                                          pad_token_id=self.tokenizer.eos_token_id,
+                                          eos_token_id=self.tokenizer.eos_token_id)
 
         return self.tokenizer.decode(out_ids[0], skip_special_tokens=True)
+
+    def next_token_logits(self, input_ids: torch.Tensor, attn_mask: torch.Tensor) -> torch.Tensor:
+        """
+        :param input_ids: Tokenized prompt IDs.
+        :param attn_mask: Attention mask aligned with input_ids.
+        :return: logits for the NEXT token given a prefix (i.e., last time step).
+        """
+        with torch.no_grad():
+            out = self.model(input_ids=input_ids, attention_mask=attn_mask, use_cache=True)
+            logits = out.logits[:, -1, :].squeeze(0).to(torch.float32)  # [V]
+        return logits
 
     @staticmethod
     def load_sv(path: Path,
