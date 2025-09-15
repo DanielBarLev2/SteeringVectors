@@ -78,7 +78,7 @@ def main():
     # loads r (steering vector) and normalizes it
     r = llama7.load_sv(SV_PATH)
 
-    PROMPT = "List three benefits that yoga has on physical health."
+    PROMPT = "What is the average number of hours of sleep a person should get?"
     max_new_tokens = 32
 
     input_ids, attn_mask, prompt_len = llama7.to_tokens(PROMPT)
