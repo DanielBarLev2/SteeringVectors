@@ -30,6 +30,9 @@ def get_harmless_instructions():
     return train, test
 
 def load_data():
+    """
+    :return: harmful_inst_train, harmful_inst_test, harmless_inst_train, harmless_inst_test
+    """
     harmful_inst_train, harmful_inst_test = get_harmful_instructions()
     harmless_inst_train, harmless_inst_test = get_harmless_instructions()
 
