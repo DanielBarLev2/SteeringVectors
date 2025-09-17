@@ -20,7 +20,7 @@ def run():
     llama7 = LlamaWrapper()
     r = llama7.load_sv(path=SV_PATH, dtype=torch.float32, map_location="cpu")
 
-    max_new_tokens = 48
+    max_new_tokens = 64
 
     for index, prompt in enumerate(prompts):
         logit_compare(llama7, r, prompt, index, max_new_tokens=max_new_tokens)
@@ -81,7 +81,7 @@ def logit_compare(llama7, r_vec, prompt, index, alpha=1, top_k=5, max_new_tokens
 
         base_logits = llama7.next_token_logits(prefix_ids, prefix_mask)
 
-        hooks = register_residual_hooks(model, r_vec=r_vec, alpha=1, start_pos=prompt_len)
+        hooks = register_residual_hooks(model, r_vec=r_vec, alpha=alpha, start_pos=prompt_len)
         try:
             steer_logits = llama7.next_token_logits(prefix_ids, prefix_mask)
         finally:
