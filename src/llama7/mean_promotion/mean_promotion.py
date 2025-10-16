@@ -13,18 +13,18 @@ def run():
     r_vec = llama7.load_sv(SV_PATH)
 
     num_prompts = 50
-    max_new_tokens = 64
+    max_new_tokens = 2
 
     print('\nnum_prompts:', num_prompts, " max_new_tokens:", max_new_tokens)
 
-    # for index, prompt in enumerate(harmless_prompts[:num_prompts]):
-    #     print(index, prompt)
-    #     store_delta_logit(llama7=llama7,
-    #                       r_vec=r_vec,
-    #                       prompt=prompt,
-    #                       index=index,
-    #                       dir_name=f'harmless_{num_prompts}_{max_new_tokens}',
-    #                       max_new_tokens=max_new_tokens)
+    for index, prompt in enumerate(harmless_prompts[:num_prompts]):
+        print(index, prompt)
+        store_delta_logit(llama7=llama7,
+                          r_vec=r_vec,
+                          prompt=prompt,
+                          index=index,
+                          dir_name=f'harmless_{num_prompts}_{max_new_tokens}',
+                          max_new_tokens=max_new_tokens)
 
     print("\n")
 
@@ -101,6 +101,7 @@ def mean_promotion(path):
     delta_logits = []
     for file in files:
         dl = torch.load(file, weights_only=True, map_location="cpu")
+        dl = dl[1 , :].unsqueeze(0)
         delta_logits.append(dl.mean(dim=0))
 
     deltas_tensor = torch.stack(delta_logits, dim=0)
@@ -115,6 +116,11 @@ def mean_promotion(path):
 
 
 if __name__ == "__main__":
-    # path = "C:/Users/danie/PycharmProjects/SteeringVectors/src/llama7/mean_promotion/raw_harmless_50_64"
-    # mean_promotion(path)
-    run()
+    path = "C:/Users/danie/PycharmProjects/SteeringVectors/src/llama7/mean_promotion/raw_harmless_50_64"
+    print("harmless with a=1")
+    mean_promotion(path)
+
+    path = "C:/Users/danie/PycharmProjects/SteeringVectors/src/llama7/mean_promotion/raw_harmful_50_64"
+    print("\nharmful with a=-1")
+    mean_promotion(path)
+    # run()
